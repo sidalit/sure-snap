@@ -1,0 +1,11 @@
+#!/bin/sh
+# Run the Sidekiq background worker (imports, syncs, scheduled jobs).
+set -eu
+. "$SNAP/bin/sure-env"
+
+load_sure_env
+prepare_app_dirs
+wait_for_services
+
+cd "$SNAP/app"
+as_service_user ruby bin/bundle exec sidekiq

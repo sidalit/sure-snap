@@ -1,0 +1,20 @@
+#!/bin/sh
+# Migrate the database and run the web server with the `snap set` settings.
+set -eu
+. "$SNAP/bin/sure-env"
+
+host="$(snapctl get host)"
+port="$(snapctl get port)"
+load_sure_env
+prepare_app_dirs
+wait_for_services
+
+case "$host" in
+  *:*) bind="tcp://[$host]:$port" ;;
+  *) bind="tcp://$host:$port" ;;
+esac
+export PORT="$port"
+
+cd "$SNAP/app"
+setpriv --reuid="$SURE_USER" --regid="$SURE_USER" --clear-groups -- ruby bin/rails db:prepare
+as_service_user ruby bin/bundle exec puma -C config/puma.rb -b "$bind"

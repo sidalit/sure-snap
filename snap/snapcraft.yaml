@@ -1,0 +1,242 @@
+name: sure
+base: core26
+version: '0.7.6'
+title: Sure
+icon: snap/gui/sure.png
+summary: Self-hosted personal finance app for budgets, net worth and investments
+description: |
+  Sure is a personal finance and wealth management app, the community
+  continuation of Maybe Finance. Track accounts, transactions, budgets,
+  investments and net worth, import CSV files or sync banks, and ask an
+  optional AI assistant about your finances.
+
+  This snap is self-contained: it runs the Sure web server and its
+  background worker together with a private PostgreSQL database and a
+  Valkey (Redis-compatible) server, reachable only from inside the snap.
+
+  **Getting started**
+
+  The services start right after installation and the web interface
+  listens on 127.0.0.1:3000 (this machine only). Open
+  http://localhost:3000 and create your account; the first account
+  becomes the administrator.
+
+  **Settings**
+
+     sudo snap set sure port=3000 host=127.0.0.1
+
+  Other upstream settings (email, AI providers, OIDC, external database)
+  go in /var/snap/sure/common/sure.env. Restart after editing:
+
+     sudo snap restart sure
+
+  **Commands**
+
+     sudo sure console
+     sudo sure.pg-dump > sure-backup.sql
+     sudo sure.psql
+license: AGPL-3.0-only
+grade: stable
+confinement: strict
+website: https://sure.am
+source-code:
+  - https://github.com/we-promise/sure
+  - https://github.com/sidalit/sure-snap
+issues:
+  - https://github.com/we-promise/sure/issues
+  - https://github.com/sidalit/sure-snap/issues
+contact: https://github.com/sidalit/sure-snap/issues
+
+platforms:
+  amd64:
+  arm64:
+
+# The services drop root and run as this shared system user.
+system-usernames:
+  snap_daemon: shared
+
+apps:
+  sure:
+    command: bin/sure-cli
+    plugs:
+      - network
+  web:
+    command: bin/sure-web
+    daemon: simple
+    after: [postgres, valkey]
+    restart-condition: on-failure
+    restart-delay: 5s
+    plugs:
+      - network
+      - network-bind
+  worker:
+    command: bin/sure-worker
+    daemon: simple
+    after: [postgres, valkey]
+    restart-condition: on-failure
+    restart-delay: 5s
+    plugs:
+      - network
+  postgres:
+    command: bin/sure-postgres
+    daemon: simple
+    # Fast shutdown: roll back open transactions instead of waiting for clients.
+    stop-mode: sigint
+    restart-condition: on-failure
+    # bind(2), here for the Unix socket only, is granted by network-bind.
+    plugs:
+      - network-bind
+  valkey:
+    command: bin/sure-valkey
+    daemon: simple
+    restart-condition: on-failure
+    plugs:
+      - network-bind
+  psql:
+    command: bin/sure-psql
+  pg-dump:
+    command: bin/sure-pg-dump
+
+parts:
+  # The Gemfile requires the exact Ruby from .ruby-version; core26 ships 3.3.
+  ruby:
+    plugin: nil
+    build-packages:
+      - curl
+      - xz-utils
+      - build-essential
+      - libssl-dev
+      - libyaml-dev
+      - zlib1g-dev
+      - libffi-dev
+      - libgmp-dev
+    stage-packages:
+      - libyaml-0-2
+      - libffi8
+      - libgmp10
+    override-build: |
+      version=3.4.9
+      sum=4231c54072601a171faed1699f105985e9971c94cd382b78feb4eb44eec2dd1a
+      tarball="ruby-$version.tar.xz"
+      curl -fsSLo "$tarball" "https://cache.ruby-lang.org/pub/ruby/${version%.*}/$tarball"
+      echo "$sum  $tarball" | sha256sum -c -
+      tar -xJf "$tarball" --strip-components=1 --no-same-owner
+      ./configure --prefix=/ruby --enable-shared --enable-load-relative \
+        --disable-install-doc --disable-install-rdoc
+      make -j"$CRAFT_PARALLEL_BUILD_COUNT"
+      make install DESTDIR="$CRAFT_PART_INSTALL"
+      install -Dm644 COPYING "$CRAFT_PART_INSTALL/share/doc/ruby/COPYING"
+    prime:
+      - ruby/bin/ruby
+      - ruby/bin/bundle
+      - ruby/bin/bundler
+      - ruby/lib
+      - -ruby/lib/pkgconfig
+      - -ruby/lib/*.a
+      - usr/lib
+      - share/doc/ruby
+
+  sure:
+    after: [ruby]
+    plugin: nil
+    source: https://github.com/we-promise/sure.git
+    source-tag: v$SNAPCRAFT_PROJECT_VERSION
+    source-depth: 1
+    build-packages:
+      - build-essential
+      - git
+      - libpq-dev
+      - libyaml-dev
+      - pkg-config
+    stage-packages:
+      - libjemalloc2
+      - libpq5
+      - libvips42t64
+      - poppler-utils
+    build-environment:
+      - RAILS_ENV: production
+      - BUNDLE_DEPLOYMENT: '1'
+      - BUNDLE_WITHOUT: development:test
+      - BUNDLE_PATH: vendor/bundle
+    override-build: |
+      export PATH="$CRAFT_STAGE/ruby/bin:$PATH"
+      # The same steps as upstream's Dockerfile, without the dev and test gems.
+      bundle config set --local deployment true
+      bundle config set --local without development:test
+      bundle config set --local path vendor/bundle
+      bundle install -j"$CRAFT_PARALLEL_BUILD_COUNT"
+      SECRET_KEY_BASE_DUMMY=1 ./bin/rails assets:precompile
+
+      gems=vendor/bundle/ruby/3.4.0
+      rm -rf "$gems/cache" "$gems"/bundler/gems/*/.git
+      find "$gems" \( -name '*.o' -o -name 'mkmf.log' -o -name 'gem_make.out' \) -delete
+      # The Tailwind CLI only builds the stylesheet, which is now precompiled.
+      rm -rf "$gems"/gems/tailwindcss-ruby-*/exe/*/
+
+      app="$CRAFT_PART_INSTALL/app"
+      mkdir -p "$app"
+      cp -a .bundle .ruby-version .sure-version Gemfile Gemfile.lock Rakefile config.ru \
+        app bin config db docs lib public vendor "$app/"
+      # Rails writes to these; keep them with the snap's data.
+      for dir in log storage tmp; do
+        ln -s "/var/snap/sure/common/$dir" "$app/$dir"
+      done
+      install -Dm644 LICENSE "$CRAFT_PART_INSTALL/share/doc/sure/LICENSE"
+    prime:
+      - app
+      - share/doc/sure
+      - usr/bin/pdftoppm
+      - usr/lib
+
+  postgresql:
+    plugin: nil
+    stage-packages:
+      - postgresql-18
+    prime:
+      - usr/lib/postgresql/18/bin/initdb
+      - usr/lib/postgresql/18/bin/pg_dump
+      - usr/lib/postgresql/18/bin/pg_isready
+      - usr/lib/postgresql/18/bin/postgres
+      - usr/lib/postgresql/18/bin/psql
+      - usr/lib/postgresql/18/lib
+      # LLVM JIT is turned off; the LLVM libraries would add ~100 MB.
+      - -usr/lib/postgresql/18/lib/llvmjit*
+      - -usr/lib/postgresql/18/lib/bitcode
+      - usr/share/postgresql/18
+      - -usr/share/postgresql/18/man
+      - usr/lib/*/libicu*
+      - usr/lib/*/libpq.so*
+      - usr/lib/*/libxml2.so*
+      - usr/lib/*/libxslt.so*
+      - usr/lib/*/libz3.so*
+      - usr/lib/*/liblz4.so*
+      - usr/lib/*/libzstd.so*
+      - usr/lib/*/libedit.so*
+      - usr/lib/*/libbsd.so*
+      - usr/lib/*/libmd.so*
+      - usr/lib/*/libgssapi_krb5.so*
+      - usr/lib/*/libkrb5*.so*
+      - usr/lib/*/libk5crypto.so*
+      - usr/lib/*/libcom_err.so*
+      - usr/lib/*/libldap*.so*
+      - usr/lib/*/liblber*.so*
+      - usr/lib/*/libsasl2.so*
+      - usr/lib/*/libnuma.so*
+      - usr/lib/*/liburing.so*
+      - usr/lib/*/libsystemd.so*
+      - usr/share/doc/postgresql-18/copyright
+
+  valkey:
+    plugin: nil
+    stage-packages:
+      - valkey-server
+    prime:
+      # valkey-server is a link to this multi-call binary.
+      - usr/bin/valkey-check-rdb
+      - usr/bin/valkey-server
+      - usr/bin/valkey-cli
+      - usr/share/doc/valkey-server/copyright
+
+  scripts:
+    plugin: dump
+    source: snap/local

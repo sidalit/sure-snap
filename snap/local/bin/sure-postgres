@@ -1,0 +1,30 @@
+#!/bin/sh
+# Run the bundled PostgreSQL server, reachable only through its socket.
+set -eu
+. "$SNAP/bin/sure-env"
+
+mkdir -p "$SNAP_COMMON/postgresql"
+make_service_dirs 0750 "$SURE_RUN"
+# PostgreSQL requires its data directory to be private.
+make_service_dirs 0700 "$SURE_PGDATA"
+
+# Only the service user can look into the data directory.
+if ! setpriv --reuid="$SURE_USER" --regid="$SURE_USER" --clear-groups -- test -s "$SURE_PGDATA/PG_VERSION"; then
+  pwfile="$SNAP_COMMON/postgresql/initdb-password"
+  (
+    umask 077
+    . "$SNAP_COMMON/secrets.env"
+    printf '%s\n' "$POSTGRES_PASSWORD" > "$pwfile"
+  )
+  chown "$SURE_USER" "$pwfile"
+  setpriv --reuid="$SURE_USER" --regid="$SURE_USER" --clear-groups -- \
+    initdb -D "$SURE_PGDATA" -U sure --pwfile="$pwfile" --auth=scram-sha-256 \
+    --encoding=UTF8 --locale=C.UTF-8
+  rm -f "$pwfile"
+fi
+
+as_service_user postgres -D "$SURE_PGDATA" \
+  -c listen_addresses= \
+  -c unix_socket_directories="$SURE_RUN" \
+  -c dynamic_shared_memory_type=mmap \
+  -c jit=off

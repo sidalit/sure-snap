@@ -1,0 +1,74 @@
+# Shared settings for the launchers; sourced, not run.
+
+triplet="$(uname -m)-linux-gnu"
+export LD_LIBRARY_PATH="$SNAP/usr/lib/$triplet:$SNAP/usr/lib/$triplet/blas:$SNAP/usr/lib/$triplet/lapack${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PATH="$SNAP/ruby/bin:$SNAP/usr/lib/postgresql/18/bin:$SNAP/usr/bin:$PATH"
+export LANG=C.UTF-8
+
+# Sockets of the bundled PostgreSQL and Valkey servers; nothing listens on TCP.
+SURE_RUN="$SNAP_COMMON/run"
+SURE_PGDATA="$SNAP_COMMON/postgresql/18"
+SURE_USER=snap_daemon
+
+# Run a command as the unprivileged service user.
+as_service_user() {
+  exec setpriv --reuid="$SURE_USER" --regid="$SURE_USER" --clear-groups -- "$@"
+}
+
+# The upstream environment, with the generated secrets, the bundled
+# services and the optional user overrides in $SNAP_COMMON/sure.env.
+load_sure_env() {
+  export RAILS_ENV=production
+  export SELF_HOSTED=true
+  export RAILS_FORCE_SSL=false
+  export RAILS_ASSUME_SSL=false
+  export DB_HOST="$SURE_RUN"
+  export DB_PORT=5432
+  export POSTGRES_USER=sure
+  export POSTGRES_DB=sure_production
+  export REDIS_URL="unix://$SURE_RUN/valkey.sock"
+  export BUNDLE_GEMFILE="$SNAP/app/Gemfile"
+  export HOME="$SNAP_COMMON/home"
+  export LD_PRELOAD="$SNAP/usr/lib/$triplet/libjemalloc.so.2"
+
+  set -a
+  . "$SNAP_COMMON/secrets.env"
+  if [ -f "$SNAP_COMMON/sure.env" ]; then
+    . "$SNAP_COMMON/sure.env"
+  fi
+  set +a
+  export PGPASSWORD="$POSTGRES_PASSWORD"
+}
+
+# Create directories owned by the service user, group root, so the root
+# launchers can look into them. The mode is set before the owner changes:
+# the snap may give files away, but not change files it does not own.
+make_service_dirs() {
+  mode="$1"
+  shift
+  for dir in "$@"; do
+    if [ "$(stat -c %U "$dir" 2>/dev/null)" != "$SURE_USER" ]; then
+      mkdir -p "$dir"
+      chmod "$mode" "$dir"
+      chown "$SURE_USER:root" "$dir"
+    fi
+  done
+}
+
+# Writable directories of the Rails app ($SNAP/app/{log,storage,tmp} link here).
+prepare_app_dirs() {
+  make_service_dirs 0750 "$SNAP_COMMON/home" "$SNAP_COMMON/log" "$SNAP_COMMON/storage" "$SNAP_COMMON/tmp"
+}
+
+# Wait until the bundled database and Valkey accept connections.
+wait_for_services() {
+  tries=0
+  until [ -S "$SURE_RUN/valkey.sock" ] && pg_isready -q -h "$DB_HOST" -p "$DB_PORT" 2>/dev/null; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 60 ]; then
+      echo "PostgreSQL or Valkey did not start; see: sudo snap logs sure" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}

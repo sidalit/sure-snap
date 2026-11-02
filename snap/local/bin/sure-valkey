@@ -1,0 +1,15 @@
+#!/bin/sh
+# Run the bundled Valkey server, reachable only through its socket.
+set -eu
+. "$SNAP/bin/sure-env"
+
+make_service_dirs 0750 "$SURE_RUN"
+make_service_dirs 0700 "$SNAP_COMMON/valkey"
+
+as_service_user valkey-server \
+  --port 0 \
+  --unixsocket "$SURE_RUN/valkey.sock" \
+  --unixsocketperm 700 \
+  --dir "$SNAP_COMMON/valkey" \
+  --daemonize no \
+  --logfile ''

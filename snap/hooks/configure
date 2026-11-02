@@ -1,0 +1,28 @@
+#!/bin/sh
+# Validate `snap set sure ...` and restart the web service so changes apply.
+set -eu
+
+port="$(snapctl get port)"
+case "$port" in
+  '' | *[!0-9]*)
+    echo "port must be a number" >&2
+    exit 1
+    ;;
+esac
+# The web server runs as an unprivileged user, so it cannot bind ports below 1024.
+if [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
+  echo "port must be between 1024 and 65535" >&2
+  exit 1
+fi
+
+case "$(snapctl get host)" in
+  '' | *[!0-9A-Za-z.:-]*)
+    echo "host must be an IP address or host name" >&2
+    exit 1
+    ;;
+esac
+
+# Also restart an enabled service that is down, so fixing a bad value brings it back.
+if snapctl services "$SNAP_INSTANCE_NAME.web" | grep -qwE 'enabled|active'; then
+  snapctl restart "$SNAP_INSTANCE_NAME.web"
+fi

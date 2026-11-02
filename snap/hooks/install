@@ -1,0 +1,49 @@
+#!/bin/sh
+# Default settings: listen on this machine only. Generate the Rails secret,
+# the keys that encrypt tokens and secrets in the database, and the password
+# of the bundled database, readable by root only.
+set -eu
+
+snapctl set port=3000 host=127.0.0.1
+
+secrets="$SNAP_COMMON/secrets.env"
+if [ ! -s "$secrets" ]; then
+  umask 077
+  cat > "$secrets" <<SECRETS
+SECRET_KEY_BASE=$(od -An -N64 -tx1 /dev/urandom | tr -d ' \n')
+ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+POSTGRES_PASSWORD=$(od -An -N24 -tx1 /dev/urandom | tr -d ' \n')
+SECRETS
+fi
+
+env="$SNAP_COMMON/sure.env"
+if [ ! -e "$env" ]; then
+  umask 077
+  cat > "$env" <<'ENV'
+# Upstream Sure settings, one VARIABLE=value per line; see
+# https://github.com/we-promise/sure/blob/main/.env.example
+# Restart after editing: sudo snap restart sure
+#
+# APP_DOMAIN=sure.example.com
+# ONBOARDING_STATE=invite_only
+# SMTP_ADDRESS=smtp.example.com
+# SMTP_PORT=465
+# SMTP_USERNAME=
+# SMTP_PASSWORD=
+# EMAIL_SENDER=sure@example.com
+# OPENAI_ACCESS_TOKEN=
+#
+# Behind a reverse proxy that terminates TLS:
+# RAILS_ASSUME_SSL=true
+#
+# An external database or Redis instead of the bundled ones:
+# DB_HOST=db.example.com
+# DB_PORT=5432
+# POSTGRES_USER=sure
+# POSTGRES_PASSWORD=secret
+# POSTGRES_DB=sure_production
+# REDIS_URL=redis://redis.example.com:6379/1
+ENV
+fi
