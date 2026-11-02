@@ -10,7 +10,6 @@ SURE_RUN="$SNAP_COMMON/run"
 SURE_PGDATA="$SNAP_COMMON/postgresql/18"
 SURE_USER=snap_daemon
 
-# Run a command as the unprivileged service user.
 as_service_user() {
   exec setpriv --reuid="$SURE_USER" --regid="$SURE_USER" --clear-groups -- "$@"
 }
@@ -60,10 +59,11 @@ prepare_app_dirs() {
   make_service_dirs 0750 "$SNAP_COMMON/home" "$SNAP_COMMON/log" "$SNAP_COMMON/storage" "$SNAP_COMMON/tmp"
 }
 
-# Wait until the bundled database and Valkey accept connections.
+# External Redis manages its own availability; only wait for our local socket.
 wait_for_services() {
   tries=0
-  until [ -S "$SURE_RUN/valkey.sock" ] && pg_isready -q -h "$DB_HOST" -p "$DB_PORT" 2>/dev/null; do
+  until { [ "$REDIS_URL" != "unix://$SURE_RUN/valkey.sock" ] || [ -S "$SURE_RUN/valkey.sock" ]; } &&
+    pg_isready -q -h "$DB_HOST" -p "$DB_PORT" 2>/dev/null; do
     tries=$((tries + 1))
     if [ "$tries" -ge 60 ]; then
       echo "PostgreSQL or Valkey did not start; see: sudo snap logs sure" >&2

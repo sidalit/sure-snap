@@ -51,7 +51,6 @@ platforms:
   amd64:
   arm64:
 
-# The services drop root and run as this shared system user.
 system-usernames:
   snap_daemon: shared
 
@@ -83,7 +82,6 @@ apps:
     # Fast shutdown: roll back open transactions instead of waiting for clients.
     stop-mode: sigint
     restart-condition: on-failure
-    # bind(2), here for the Unix socket only, is granted by network-bind.
     plugs:
       - network-bind
   valkey:
@@ -94,8 +92,10 @@ apps:
       - network-bind
   psql:
     command: bin/sure-psql
+    plugs: [network]
   pg-dump:
     command: bin/sure-pg-dump
+    plugs: [network]
 
 parts:
   # The Gemfile requires the exact Ruby from .ruby-version; core26 ships 3.3.
@@ -154,7 +154,6 @@ parts:
       - BUNDLE_PATH: vendor/bundle
     override-build: |
       export PATH="$CRAFT_STAGE/ruby/bin:$PATH"
-      # The same steps as upstream's Dockerfile, without the dev and test gems.
       bundle config set --local deployment true
       bundle config set --local without development:test
       bundle config set --local path vendor/bundle

@@ -1,5 +1,4 @@
 #!/bin/sh
-# Migrate the database and run the web server with the `snap set` settings.
 set -eu
 . "$SNAP/bin/sure-env"
 

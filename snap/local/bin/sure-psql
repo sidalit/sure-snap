@@ -1,5 +1,4 @@
 #!/bin/sh
-# Open a psql shell on the bundled database.
 set -eu
 . "$SNAP/bin/sure-env"
 

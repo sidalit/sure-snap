@@ -1,5 +1,4 @@
 #!/bin/sh
-# Run the Sidekiq background worker (imports, syncs, scheduled jobs).
 set -eu
 . "$SNAP/bin/sure-env"
 

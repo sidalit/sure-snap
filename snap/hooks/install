@@ -1,7 +1,5 @@
 #!/bin/sh
-# Default settings: listen on this machine only. Generate the Rails secret,
-# the keys that encrypt tokens and secrets in the database, and the password
-# of the bundled database, readable by root only.
+# Keep generated Rails, encryption and database secrets readable by root only.
 set -eu
 
 snapctl set port=3000 host=127.0.0.1

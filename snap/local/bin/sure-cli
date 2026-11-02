@@ -1,5 +1,4 @@
 #!/bin/sh
-# Run a Rails command (console, runner, a rake task) as the service user.
 set -eu
 . "$SNAP/bin/sure-env"
 

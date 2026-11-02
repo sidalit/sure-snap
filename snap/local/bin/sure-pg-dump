@@ -1,5 +1,4 @@
 #!/bin/sh
-# Write an SQL dump of the bundled database to standard output.
 set -eu
 . "$SNAP/bin/sure-env"
 
