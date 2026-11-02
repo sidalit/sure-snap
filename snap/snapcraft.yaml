@@ -101,9 +101,9 @@ parts:
   # The Gemfile requires the exact Ruby from .ruby-version; core26 ships 3.3.
   ruby:
     plugin: nil
+    source: https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.9.tar.xz
+    source-checksum: sha256/4231c54072601a171faed1699f105985e9971c94cd382b78feb4eb44eec2dd1a
     build-packages:
-      - curl
-      - xz-utils
       - build-essential
       - libssl-dev
       - libyaml-dev
@@ -115,12 +115,6 @@ parts:
       - libffi8
       - libgmp10
     override-build: |
-      version=3.4.9
-      sum=4231c54072601a171faed1699f105985e9971c94cd382b78feb4eb44eec2dd1a
-      tarball="ruby-$version.tar.xz"
-      curl -fsSLo "$tarball" "https://cache.ruby-lang.org/pub/ruby/${version%.*}/$tarball"
-      echo "$sum  $tarball" | sha256sum -c -
-      tar -xJf "$tarball" --strip-components=1 --no-same-owner
       ./configure --prefix=/ruby --enable-shared --enable-load-relative \
         --disable-install-doc --disable-install-rdoc
       make -j"$CRAFT_PARALLEL_BUILD_COUNT"
