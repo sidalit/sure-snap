@@ -168,8 +168,11 @@ parts:
 
       app="$CRAFT_PART_INSTALL/app"
       mkdir -p "$app"
-      cp -a .bundle .ruby-version .sure-version Gemfile Gemfile.lock Rakefile config.ru \
+      cp -a .bundle .ruby-version Gemfile Gemfile.lock Rakefile config.ru \
         app bin config db docs lib public vendor "$app/"
+      if [ -f .sure-version ]; then
+        cp -a .sure-version "$app/"
+      fi
       # Rails writes to these; keep them with the snap's data.
       for dir in log storage tmp; do
         ln -s "/var/snap/sure/common/$dir" "$app/$dir"
